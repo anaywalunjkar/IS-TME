@@ -81,41 +81,6 @@ The simulation produces 6 figures per run:
 
 ---
 
-## Installation and usage
-
-```bash
-# Clone the repository
-git clone https://github.com/YOUR_USERNAME/gbm-tme-simulation.git
-cd gbm-tme-simulation
-
-# Install dependencies
-pip install numpy scipy matplotlib pandas tqdm jupyter
-
-# Run unit tests first
-python tests/test_diffusion.py
-python tests/test_cells.py
-python tests/test_immune.py
-
-# Run the full 30-day simulation (~15-25 min on CPU)
-python run_sim.py
-```
-
----
-
-## Dependencies
-
-| Package | Purpose |
-|---|---|
-| `numpy` | Array operations, PDE fields |
-| `scipy` | Laplacian computation (ndimage.laplace) |
-| `matplotlib` | All visualisation |
-| `tqdm` | Progress bar |
-| `pandas` | Snapshot history analysis |
-
-Python 3.10+ required.
-
----
-
 ## Key parameters
 
 All biological constants are in `config/params.py`. Every value has a literature source comment. Key parameters:
@@ -133,11 +98,12 @@ All biological constants are in `config/params.py`. Every value has a literature
 
 ## Roadmap
 
-- [x] Month 1–2: Core tumor model — cell states, O₂/glucose PDE, necrotic core
-- [x] Month 3: Signaling layer — VEGF, TGF-β, IL-10, angiogenesis
-- [x] Month 4: Immune compartment — TAMs, T cells, MDSCs, Tregs, IFN-γ
-- [ ] Month 5: Treatment module — TMZ PK/PD, radiation, MGMT methylation
-- [ ] Month 6: 3D extension, patient-specific imaging integration
+- [x] Step 1: Core tumor model — cell states, O₂/glucose PDE, necrotic core
+- [x] Step 2: Signaling layer — VEGF, TGF-β, IL-10, angiogenesis
+- [x] Step 3: Immune compartment — TAMs, T cells, MDSCs, Tregs, IFN-γ
+- [Ongoing] Step 4: Treatment module — TMZ PK/PD, radiation, MGMT methylation
+- [Ongoing] Step 5: Patient module- sc/Bulk seq data integration
+- [ ] Step 5: Patient-specific treatment extensions via
 
 ---
 
@@ -153,15 +119,13 @@ Key papers this simulation is grounded in:
 6. Ferrara et al. (2003) — VEGF biology. *Nature Medicine* 9(6)
 7. Woroniecka et al. (2018) — T cell exhaustion in GBM. *Clinical Cancer Research* 24(17)
 
-Full reference list with DOIs available in the repository documentation.
-
 ---
 
 ## Author
 
 Built as an independent computational oncology research project.
-Simulation architecture, biological parameterisation, and validation by [Your Name].
+Simulation architecture, biological parameterisation, and validation by anay.
 
 ---
 
-*This is an active research project. Month 5 (treatment module) in development.*
+*This is an active research project. Step 5 (treatment module) is in development.*
