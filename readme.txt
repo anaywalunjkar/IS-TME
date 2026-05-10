@@ -103,7 +103,7 @@ All biological constants are in `config/params.py`. Every value has a literature
 - [x] Step 3: Immune compartment — TAMs, T cells, MDSCs, Tregs, IFN-γ
 - [Ongoing] Step 4: Treatment module — TMZ PK/PD, radiation, MGMT methylation
 - [Ongoing] Step 5: Patient module- sc/Bulk seq data integration
-- [ ] Step 5: Patient-specific treatment extensions via
+- [ ] Step 6: Patient-specific treatment extensions via
 
 ---
 
