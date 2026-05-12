@@ -5,7 +5,9 @@ from core.tumor_cell import TumorCell, CellState
 from core.diffusion import DiffusionSolver
 from core.signaling import SignalingLayer
 from core.immune_cell import TAMCell, TCell, MDSCCell, TregCell, TAMState
-from config.params import GRID, OXYGEN, GLUCOSE, TUMOR_CELL, SIGNALING, IMMUNE, SIM
+from core.treatment import TreatmentModule
+from config.params import (GRID, OXYGEN, GLUCOSE, TUMOR_CELL,
+                           SIGNALING, IMMUNE, TREATMENT, SIM)
 
 
 class SimulationEngine:
@@ -20,18 +22,16 @@ class SimulationEngine:
         self.glc_solver = DiffusionSolver(GLUCOSE["D"], GRID["voxel_size"], SIM["dt"])
         self.signaling  = SignalingLayer(GRID, SIGNALING, SIM["dt"])
 
-        # Tumor cells
-        self.cells = []
+        # Month 5 — treatment module
+        self.treatment = TreatmentModule(GRID, TREATMENT, SIM["dt"])
 
-        # Month 4 — immune cell lists
-        self.tams  = []   # TAMCell list
-        self.tcells= []   # TCell list
-        self.mdscs = []   # MDSCCell list
-        self.tregs = []   # TregCell list
-
+        self.cells  = []
+        self.tams   = []
+        self.tcells = []
+        self.mdscs  = []
+        self.tregs  = []
         self.history = []
 
-        # Pre-equilibrate substrates
         print("Pre-equilibrating substrate fields...")
         empty_consume = np.zeros((GRID["height"], GRID["width"]))
         for _ in range(2000):
@@ -55,6 +55,9 @@ class SimulationEngine:
         nearest = np.argmin(dists)
         sx, sy  = int(vx[nearest]), int(vy[nearest])
 
+        scenario = TREATMENT["mgmt_scenario"]
+        rate     = TREATMENT["mgmt_methylation_rate"]
+
         placed, attempts = 0, 0
         while placed < SIM["n_initial_cells"] and attempts < 1000:
             x = sx + self.rng.integers(-8, 9)
@@ -62,23 +65,49 @@ class SimulationEngine:
             if (self.grid.in_bounds(x, y) and
                     self.grid.occupancy[y, x] == -1 and
                     self.grid.oxygen[y, x] > OXYGEN["hypoxia_thresh"]):
-                cell = TumorCell(x, y, CellState.PROLIF, TUMOR_CELL, self.rng)
+
+                # Assign MGMT status based on scenario
+                if scenario == "all_methylated":
+                    mgmt = True
+                elif scenario == "all_unmethylated":
+                    mgmt = False
+                else:   # mixed
+                    mgmt = bool(self.rng.random() < rate)
+
+                cell = TumorCell(x, y, CellState.PROLIF, TUMOR_CELL,
+                                 self.rng, mgmt_methylated=mgmt)
                 self.cells.append(cell)
                 self.grid.occupancy[y, x] = cell.id
                 placed += 1
             attempts += 1
+
+        # Count methylation at seeding
+        n_meth = sum(1 for c in self.cells if c.mgmt_methylated)
         print(f"Seeded {placed} tumor cells near vessel at ({sx}, {sy})")
+        print(f"  MGMT scenario: {scenario}")
+        print(f"  Methylated: {n_meth} / {placed} "
+              f"({n_meth/placed*100:.0f}%)")
+
+        # Explicitly seed GSC subpopulation — always unmethylated, treatment resistant
+        n_gsc = SIM.get("n_initial_gsc", 5)
+        gsc_placed, gsc_attempts = 0, 0
+        while gsc_placed < n_gsc and gsc_attempts < 500:
+            x = sx + self.rng.integers(-6, 7)
+            y = sy + self.rng.integers(-6, 7)
+            if (self.grid.in_bounds(x, y) and
+                    self.grid.occupancy[y, x] == -1 and
+                    self.grid.oxygen[y, x] > OXYGEN["hypoxia_thresh"]):
+                gsc = TumorCell(x, y, CellState.GSC, TUMOR_CELL,
+                                self.rng, mgmt_methylated=False)
+                self.cells.append(gsc)
+                self.grid.occupancy[y, x] = gsc.id
+                gsc_placed += 1
+            gsc_attempts += 1
+        print(f"  GSC seeds placed: {gsc_placed}")
 
     def _recruit_immune_cells(self):
-        """
-        Each timestep, each vessel has a small probability of releasing
-        each immune cell type into an adjacent free voxel.
-        This models transendothelial migration (extravasation).
-
-        TAMs dominate (5:1 ratio vs T cells) — matches GBM clinical data.
-        """
         vy, vx = np.where(self.grid.vessels)
-        p = IMMUNE
+        p  = IMMUNE
         dt = SIM["dt"]
 
         for (vxi, vyi) in zip(vx.tolist(), vy.tolist()):
@@ -86,14 +115,12 @@ class SimulationEngine:
             if not free:
                 continue
 
-            # TAM recruitment
             if self.rng.random() < p["tam_recruit_rate"] * dt:
                 nx, ny = free[self.rng.integers(len(free))]
                 tam = TAMCell(nx, ny, TAMState.M1, p, self.rng)
                 self.tams.append(tam)
                 self.grid.occupancy[ny, nx] = -(id(tam))
 
-            # T cell recruitment
             if self.rng.random() < p["tcell_recruit_rate"] * dt:
                 free2 = self.grid.free_neighbors(vxi, vyi)
                 if free2:
@@ -102,7 +129,6 @@ class SimulationEngine:
                     self.tcells.append(tc)
                     self.grid.occupancy[ny, nx] = -(id(tc))
 
-            # MDSC recruitment
             if self.rng.random() < p["mdsc_recruit_rate"] * dt:
                 free3 = self.grid.free_neighbors(vxi, vyi)
                 if free3:
@@ -111,7 +137,6 @@ class SimulationEngine:
                     self.mdscs.append(mdsc)
                     self.grid.occupancy[ny, nx] = -(id(mdsc))
 
-            # Treg recruitment
             if self.rng.random() < p["treg_recruit_rate"] * dt:
                 free4 = self.grid.free_neighbors(vxi, vyi)
                 if free4:
@@ -131,7 +156,10 @@ class SimulationEngine:
 
         all_immune = self.tams + self.tcells + self.mdscs + self.tregs
 
-        # 1. O2 and glucose consumption maps
+        # 1. Advance treatment clock
+        self.treatment.advance(dt)
+
+        # 2. O2 and glucose consumption
         o2_consume = self.o2_solver.build_consumption_map(
             self.grid, self.cells,
             {"GSC":       OXYGEN["consume_quiesc"],
@@ -149,33 +177,44 @@ class SimulationEngine:
              "NECROTIC":  0.0}
         )
 
-        # 2. Advance substrate fields
+        # 3. Advance substrate fields
         self.o2_solver.step(self.grid.oxygen, self.grid.vessels,
                             OXYGEN["vessel_conc"], o2_consume)
         self.glc_solver.step(self.grid.glucose, self.grid.vessels,
                              GLUCOSE["vessel_conc"], glc_consume)
 
-        # 3. Advance signaling fields (now includes immune secretion)
+        # 4. Advance TMZ field
+        self.treatment.step_tmz(self.grid)
+
+        # 5. Advance signaling fields
         self.signaling.step(self.grid, self.cells,
                             immune_cells=all_immune,
                             immune_params=ip)
 
-        # 4. Angiogenesis
+        # 6. Angiogenesis
         self._maybe_sprout_vessels()
 
-        # 5. Recruit new immune cells through vessels
+        # 7. Recruit immune cells
         self._recruit_immune_cells()
 
-        # 6. Build suppression map from MDSCs and Tregs
+        # 8. Suppression map
         suppression_map = self._build_suppression_map()
 
-        # 7. Build tumor cell lookup dict (id -> cell) for immune killing
+        # 9. Tumor cell lookup
         tumor_by_id = {cell.id: cell for cell in self.cells}
 
-        # 8. Update tumor cells
+        # 10. Apply TMZ damage to all tumor cells
+        self.treatment.apply_tmz_to_cells(self.cells, dt)
+
+        # 11. Apply radiation if today is a treatment day
+        if self.treatment.rt_today:
+            self.treatment.apply_radiation_to_cells(
+                self.cells, self.grid.oxygen)
+
+        # 12. Update tumor cells
         self.rng.shuffle(self.cells)
-        new_cells = []
-        dead_tumor_ids = set()
+        new_cells  = []
+        dead_tumor = set()
 
         for cell in self.cells:
             local_o2  = self.grid.oxygen[cell.y, cell.x]
@@ -184,7 +223,7 @@ class SimulationEngine:
             cell.update_state(local_o2, local_glc, dt, p)
 
             if not cell.alive:
-                dead_tumor_ids.add(cell.id)
+                dead_tumor.add(cell.id)
                 continue
 
             daughter = cell.try_divide(self.grid, dt, p)
@@ -193,8 +232,10 @@ class SimulationEngine:
 
             cell.try_migrate(self.grid, self.grid.oxygen, dt, p)
 
-        # 9. Update TAMs — polarisation + migration + killing
-        dead_from_tam = set()
+        # 13. Update immune cells
+        dead_from_tam   = set()
+        dead_from_tcell = set()
+
         for tam in self.tams:
             tam.update(self.grid, self.signaling, dt, ip)
             if tam.alive:
@@ -202,8 +243,6 @@ class SimulationEngine:
                 if killed:
                     dead_from_tam.add(killed)
 
-        # 10. Update T cells — exhaustion + migration + killing
-        dead_from_tcell = set()
         for tc in self.tcells:
             tc.update(self.grid, self.signaling, dt, ip)
             if tc.alive:
@@ -213,35 +252,28 @@ class SimulationEngine:
                 if killed:
                     dead_from_tcell.add(killed)
 
-        # 11. Update MDSCs and Tregs
         for mdsc in self.mdscs:
             mdsc.update(self.grid, self.signaling, dt, ip)
         for treg in self.tregs:
             treg.update(self.grid, self.signaling, dt, ip)
 
-        # 12. Collect all tumor cells killed by immune system
-        immune_killed = dead_from_tam | dead_from_tcell
-
-        # 13. Remove dead tumor cells
-        all_dead = dead_tumor_ids | immune_killed
+        # 14. Remove dead tumor cells
+        all_dead = dead_tumor | dead_from_tam | dead_from_tcell
         for cell in self.cells:
             if cell.id in all_dead:
                 self.grid.occupancy[cell.y, cell.x] = -1
 
         self.cells = [c for c in self.cells if c.id not in all_dead]
         self.cells.extend(new_cells)
-        # Add new daughters to lookup
-        for d in new_cells:
-            tumor_by_id[d.id] = d
 
-        # 14. Remove dead immune cells
-        def _clean(cell_list):
-            dead = [c for c in cell_list if not c.alive]
+        # 15. Remove dead immune cells
+        def _clean(lst):
+            dead = [c for c in lst if not c.alive]
             for c in dead:
                 if self.grid.in_bounds(c.x, c.y):
                     if self.grid.occupancy[c.y, c.x] == -(id(c)):
                         self.grid.occupancy[c.y, c.x] = -1
-            return [c for c in cell_list if c.alive]
+            return [c for c in lst if c.alive]
 
         self.tams   = _clean(self.tams)
         self.tcells = _clean(self.tcells)
@@ -249,48 +281,28 @@ class SimulationEngine:
         self.tregs  = _clean(self.tregs)
 
     # ------------------------------------------------------------------
-    # Suppression map
+    # Helpers
     # ------------------------------------------------------------------
 
     def _build_suppression_map(self):
-        """
-        Returns dict: (x,y) -> suppression_factor [0,1].
-        1.0 = no suppression (T cell kills at full rate).
-        Values below 1.0 reduce T cell killing.
-
-        MDSCs suppress within radius mdsc_suppress_radius.
-        Tregs suppress within radius treg_suppress_radius.
-        Multiple suppressors stack multiplicatively.
-        """
-        ip = IMMUNE
-        supp = {}   # (x,y) -> factor
-
+        ip   = IMMUNE
+        supp = {}
         for mdsc in self.mdscs:
-            zone = mdsc.get_suppression_zone(self.grid, ip)
-            for pos in zone:
+            for pos in mdsc.get_suppression_zone(self.grid, ip):
                 supp[pos] = supp.get(pos, 1.0) * ip["mdsc_suppress_factor"]
-
         for treg in self.tregs:
-            zone = treg.get_suppression_zone(self.grid, ip)
-            for pos in zone:
+            for pos in treg.get_suppression_zone(self.grid, ip):
                 supp[pos] = supp.get(pos, 1.0) * ip["treg_suppress_factor"]
-
         return supp
-
-    # ------------------------------------------------------------------
-    # Angiogenesis (unchanged from Month 3)
-    # ------------------------------------------------------------------
 
     def _maybe_sprout_vessels(self):
         max_vessels   = 80
         current_count = int(self.grid.vessels.sum())
         if current_count >= max_vessels:
             return
-
         candidates  = self.signaling.get_angiogenesis_stimulus(self.grid)
         sprout_prob = 0.000005
         vy, vx = np.where(self.grid.vessels)
-
         for (cx, cy) in candidates:
             if current_count >= max_vessels:
                 break
@@ -317,47 +329,53 @@ class SimulationEngine:
         for step_i in tqdm(range(n_steps), desc="Simulating"):
             self.step()
             t += SIM["dt"]
-
             if step_i % save_interval == 0:
                 self._record_snapshot(t)
 
         return self.history
 
     def _record_snapshot(self, t):
-        # Tumor state counts
         tumor_states = {}
         for cell in self.cells:
             s = cell.state.name
             tumor_states[s] = tumor_states.get(s, 0) + 1
 
-        # Immune counts
-        m1_count = sum(1 for c in self.tams if c.state.name == "M1")
-        m2_count = sum(1 for c in self.tams if c.state.name == "M2")
-        active_t = sum(1 for c in self.tcells if c.state.name == "ACTIVE")
-        exh_t    = sum(1 for c in self.tcells if c.state.name == "EXHAUSTED")
+        m1 = sum(1 for c in self.tams   if c.state.name == "M1")
+        m2 = sum(1 for c in self.tams   if c.state.name == "M2")
+        ta = sum(1 for c in self.tcells if c.state.name == "ACTIVE")
+        te = sum(1 for c in self.tcells if c.state.name == "EXHAUSTED")
 
-        sig = self.signaling.get_summary()
+        sig   = self.signaling.get_summary()
+        treat = self.treatment.get_summary()
+        mgmt  = self.treatment.get_mgmt_counts(self.cells)
 
         self.history.append({
-            "time_hr":       t,
-            "n_cells":       len(self.cells),
-            "tumor_states":  tumor_states,
-            "o2_mean":       float(self.grid.oxygen.mean()),
-            "o2_min":        float(self.grid.oxygen.min()),
-            "vessel_count":  int(self.grid.vessels.sum()),
+            "time_hr":        t,
+            "day":            t / 24.0,
+            "n_cells":        len(self.cells),
+            "tumor_states":   tumor_states,
+            "o2_mean":        float(self.grid.oxygen.mean()),
+            "o2_min":         float(self.grid.oxygen.min()),
+            "vessel_count":   int(self.grid.vessels.sum()),
             # Immune
-            "n_tam_m1":      m1_count,
-            "n_tam_m2":      m2_count,
-            "n_tcell_active":active_t,
-            "n_tcell_exh":   exh_t,
-            "n_mdsc":        len(self.mdscs),
-            "n_treg":        len(self.tregs),
+            "n_tam_m1":       m1,
+            "n_tam_m2":       m2,
+            "n_tcell_active": ta,
+            "n_tcell_exh":    te,
+            "n_mdsc":         len(self.mdscs),
+            "n_treg":         len(self.tregs),
             # Signaling
-            "vegf_mean":     sig["vegf_mean"],
-            "vegf_max":      sig["vegf_max"],
-            "tgf_mean":      sig["tgf_mean"],
-            "tgf_max":       sig["tgf_max"],
-            "il10_mean":     sig["il10_mean"],
-            "ifng_mean":     sig["ifng_mean"],
-            "ifng_max":      sig["ifng_max"],
+            "vegf_mean":      sig["vegf_mean"],
+            "tgf_mean":       sig["tgf_mean"],
+            "il10_mean":      sig["il10_mean"],
+            "ifng_mean":      sig["ifng_mean"],
+            # Treatment
+            "tmz_active":     treat["tmz_active"],
+            "rt_fractions":   treat["fraction_count"],
+            "tmz_mean":       treat["tmz_mean"],
+            "tmz_max":        treat["tmz_max"],
+            # MGMT
+            "n_methylated":   mgmt["methylated"],
+            "n_unmethylated": mgmt["unmethylated"],
+            "n_gsc":          mgmt["gsc"],
         })

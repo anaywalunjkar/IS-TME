@@ -1,17 +1,18 @@
 # config/params.py
 # Units: time=hours, space=micrometers (um),
-#        O2=mmHg, glucose=mM, cytokines=pg/mL-equivalent
+#        O2=mmHg, glucose=mM, cytokines=pg/mL
+#        TMZ concentration=uM, radiation dose=Gy
 
 GRID = {
     "width":      200,
     "height":     200,
-    "voxel_size": 20,      # um per voxel
+    "voxel_size": 20,
 }
 
 OXYGEN = {
     "D":               1800.0,
     "decay":           0.0,
-    "vessel_conc":     40.0,    # mmHg
+    "vessel_conc":     40.0,
     "consume_prolif":  2.0,
     "consume_quiesc":  0.5,
     "hypoxia_thresh":  8.0,
@@ -43,7 +44,6 @@ TUMOR_CELL = {
 }
 
 SIGNALING = {
-    # VEGF
     "vegf_D":                180.0,
     "vegf_decay":            0.1,
     "vegf_sec_invasive":     2.0,
@@ -51,103 +51,151 @@ SIGNALING = {
     "vegf_sec_necrotic":     0.1,
     "vegf_max":              200.0,
     "vegf_sprout_threshold": 2.0,
-    # TGF-beta
     "tgf_D":                 120.0,
     "tgf_decay":             0.15,
     "tgf_sec_tumor":         0.5,
     "tgf_sec_gsc":           1.0,
     "tgf_max":               100.0,
-    # IL-10
     "il10_D":                200.0,
     "il10_decay":            0.2,
     "il10_sec_tumor":        0.3,
     "il10_max":              80.0,
-    # IFN-gamma (Month 4 — secreted by M1 TAMs and active T cells)
-    "ifng_D":                220.0,   # um2/hr — small cytokine, fast diffusion
-    "ifng_decay":            0.25,    # /hr — half-life ~2.8 hr (degrades quickly)
-    "ifng_sec_m1tam":        0.4,     # pg/mL/hr — M1 TAMs are strong IFN-g source
-    "ifng_sec_tcell":        0.6,     # pg/mL/hr — active CD8+ T cells
-    "ifng_max":              60.0,    # pg/mL
+    "ifng_D":                220.0,
+    "ifng_decay":            0.25,
+    "ifng_sec_m1tam":        0.4,
+    "ifng_sec_tcell":        0.6,
+    "ifng_max":              60.0,
+}
+
+IMMUNE = {
+    "tam_recruit_rate":      0.005,
+    "tcell_recruit_rate":    0.002,
+    "mdsc_recruit_rate":     0.002,
+    "treg_recruit_rate":     0.001,
+    "tam_migration_speed":   4.0,
+    "tam_lifespan":          240.0,
+    "tgf_m2_threshold":      0.3,
+    "il10_m2_threshold":     0.2,
+    "ifng_m1_threshold":     0.2,
+    "m1_to_m2_prob":         0.3,
+    "m2_to_m1_prob":         0.05,
+    "m1_kill_prob":          0.02,
+    "m1_tgf_secretion":      0.0,
+    "m1_il10_secretion":     0.0,
+    "m1_ifng_secretion":     0.4,
+    "m2_kill_prob":          0.0,
+    "m2_tgf_secretion":      0.3,
+    "m2_il10_secretion":     0.2,
+    "m2_ifng_secretion":     0.0,
+    "tcell_migration_speed": 6.0,
+    "tcell_lifespan":        120.0,
+    "tcell_kill_prob":       0.08,
+    "tcell_kill_radius":     1,
+    "exhaustion_tgf_thresh": 0.4,
+    "exhaustion_il10_thresh":0.3,
+    "exhaustion_rate":       0.05,
+    "exhaustion_threshold":  1.0,
+    "exhaustion_kill_factor":0.1,
+    "tcell_ifng_secretion":  0.6,
+    "mdsc_migration_speed":  3.0,
+    "mdsc_lifespan":         96.0,
+    "mdsc_suppress_radius":  3,
+    "mdsc_suppress_factor":  0.3,
+    "treg_migration_speed":  5.0,
+    "treg_lifespan":         144.0,
+    "treg_suppress_radius":  2,
+    "treg_suppress_factor":  0.4,
+    "treg_il10_secretion":   0.15,
+    "treg_tgf_secretion":    0.1,
 }
 
 # ------------------------------------------------------------------
-# Month 4 — Immune compartment parameters
+# Month 5 — Treatment parameters (Stupp Protocol)
 # ------------------------------------------------------------------
-IMMUNE = {
-    # ── Recruitment / extravasation ────────────────────────────────
-    # Immune cells enter through vessels each timestep with low prob
-    # Rates calibrated so TAM:T cell ratio ~5:1 at steady state
-    # (matches clinical GBM data: TAMs dominate infiltrate)
-    "tam_recruit_rate":   0.005,   # ← was 0.002, 2.5x higher
-    "tcell_recruit_rate": 0.002,   # ← was 0.0005, 4x higher
-    "mdsc_recruit_rate":  0.002,   # ← was 0.0008
-    "treg_recruit_rate":  0.001,   # ← was 0.0003
+# Reference: Stupp et al. 2005 (NEJM) — standard GBM treatment
+# TMZ PK: Portnow et al. 2009; Ostermann et al. 2004
+# MGMT: Hegi et al. 2005 (NEJM)
+# Radiobiology: Hall & Giaccia 2019
 
-    # ── TAM (Tumor-Associated Macrophage) ──────────────────────────
-    # M1 = pro-inflammatory, anti-tumor
-    # M2 = anti-inflammatory, pro-tumor (dominant in GBM)
-    "tam_migration_speed":  4.0,     # um/hr — slower than tumor cells
-    "tam_lifespan":         240.0,   # hr = 10 days in tissue
+TREATMENT = {
+    # ── Simulation duration ────────────────────────────────────────
+    # Extended to 42 days to cover full concurrent Stupp phase
+    "total_time_hr":        1008.0,   # 42 days in hours
 
-    # Polarisation thresholds (pg/mL)
-    # Above tgf_m2_threshold: TAM polarises toward M2
-    "tgf_m2_threshold":     0.3,     # pg/mL TGF-b drives M1->M2
-    "il10_m2_threshold":    0.2,     # pg/mL IL-10 reinforces M2
-    "ifng_m1_threshold":    0.2,     # pg/mL IFN-g drives M2->M1
+    # ── TMZ pharmacokinetics ───────────────────────────────────────
+    # TMZ diffuses through tissue from vessel sources
+    # BBB reduces plasma→CNS concentration to ~20%
+    "tmz_D":                400.0,    # um2/hr — small molecule, faster diffusion
+    "tmz_decay":            0.139,    # /hr — plasma half-life ~1.8 hr → decay 0.139
+    "tmz_bbb_fraction":     0.20,     # 20% of plasma concentration crosses BBB
+    "tmz_plasma_conc":      50.0,     # uM — peak plasma concentration at 75mg/m2/day
+    "tmz_vessel_conc":      10.0,     # uM — effective CNS concentration (20% of plasma)
+    "tmz_max":              50.0,     # uM — hard cap
 
-    # Polarisation probabilities per hour
-    "m1_to_m2_prob":        0.3,     # /hr under TGF-b + IL-10
-    "m2_to_m1_prob":        0.05,    # /hr under IFN-g (rare — hard to reverse)
+    # TMZ DNA damage — probability of lethal damage per cell per hour
+    # Scales with local TMZ concentration
+    # Reference: Portnow et al. 2009
+    "tmz_kill_base":        0.002,    # /hr/uM — base killing rate per uM TMZ
 
-    # M1 TAM actions
-    "m1_kill_prob":         0.02,    # /hr prob of killing adjacent tumor cell
-    "m1_tgf_secretion":     0.0,     # M1 does NOT secrete TGF-b
-    "m1_il10_secretion":    0.0,
-    "m1_ifng_secretion":    0.4,     # secreted by M1 per hr
+    # MGMT methylation
+    # Switch: "all_methylated", "all_unmethylated", "mixed"
+    # mixed: mgmt_methylation_rate fraction of cells are methylated
+    "mgmt_scenario":        "mixed",  # ← change this to test scenarios
+    "mgmt_methylation_rate":0.40,     # 40% methylated — clinical GBM rate
+                                      # (Hegi et al. 2005: ~45% in trial)
 
-    # M2 TAM actions
-    "m2_kill_prob":         0.0,     # M2 does not kill tumor cells
-    "m2_tgf_secretion":     0.3,     # reinforces immunosuppression
-    "m2_il10_secretion":    0.2,
-    "m2_ifng_secretion":    0.0,
+    # MGMT repair — unmethylated cells repair TMZ damage
+    # Methylated cells CANNOT repair (MGMT promoter silenced)
+    "mgmt_repair_factor":   0.05,     # unmethylated: only 5% of damage is lethal
+                                      # methylated: 100% of damage is lethal
 
-    # ── CD8+ T cell ────────────────────────────────────────────────
-    "tcell_migration_speed": 6.0,    # um/hr — faster than TAMs
-    "tcell_lifespan":        120.0,  # hr = 5 days before natural death
+    # GSCs are ALWAYS unmethylated — treatment resistant
+    # This drives recurrence after treatment ends
+    "gsc_tmz_resistance":   0.005,    # GSCs: only 0.5% killing rate vs bulk
 
-    # Killing
-    "tcell_kill_prob":       0.08,   # /hr base killing rate when adjacent
-    "tcell_kill_radius":     1,      # voxels — must be adjacent (Moore neighbourhood)
+    # ── Radiotherapy (RT) ──────────────────────────────────────────
+    # Standard: 2 Gy per fraction, 5 days/week, 6 weeks = 30 fractions
+    # Concurrent with TMZ days 1-42
+    "rt_dose_per_fraction": 2.0,      # Gy per fraction
+    "rt_fractions_per_week":5,        # Monday-Friday
+    "rt_start_day":         1,        # Day 1 of simulation
+    "rt_end_day":           42,       # Day 42 (30 fractions over 6 weeks)
 
-    # Exhaustion — driven by local TGF-b and IL-10
-    "exhaustion_tgf_thresh": 0.4,    # pg/mL — above this, exhaustion accumulates
-    "exhaustion_il10_thresh":0.3,    # pg/mL
-    "exhaustion_rate":       0.05,   # /hr — rate of exhaustion accumulation
-    "exhaustion_threshold":  1.0,    # cumulative — above this = EXHAUSTED state
-    "exhaustion_kill_factor":0.1,    # exhausted T cells kill at 10% of normal rate
+    # Linear-quadratic model: survival fraction = exp(-alpha*D - beta*D²)
+    # Parameters for GBM (Joiner & van der Kogel 2009)
+    "rt_alpha":             0.3,      # Gy⁻¹
+    "rt_beta":              0.03,     # Gy⁻²
+    "rt_alpha_beta":        10.0,     # Gy (alpha/beta ratio for GBM)
 
-    # T cell IFN-g secretion
-    "tcell_ifng_secretion":  0.6,    # pg/mL/hr when active
+    # Oxygen Enhancement Ratio (OER)
+    # Hypoxic cells are ~3x more radioresistant
+    # OER reduces effective dose in hypoxic voxels
+    # Reference: Hall & Giaccia 2019 (Radiobiology for the Radiologist)
+    "rt_oer_max":           3.0,      # maximum OER (fully anoxic)
+    "rt_oer_k":             3.0,      # mmHg — O2 concentration for half-max OER
+                                      # (OER = OER_max * K / (pO2 + K))
 
-    # ── MDSC (Myeloid-Derived Suppressor Cell) ─────────────────────
-    "mdsc_migration_speed":  3.0,    # um/hr — slow
-    "mdsc_lifespan":         96.0,   # hr = 4 days
-    "mdsc_suppress_radius":  3,      # voxels — suppresses T cells within this radius
-    "mdsc_suppress_factor":  0.3,    # T cell killing rate multiplied by this
+    # GSC radioresistance — GSCs activate DNA damage checkpoints
+    # Reference: Bao et al. 2006 (Nature)
+    "rt_gsc_resistance":    0.2,      # GSC survival fraction raised to power 0.2
+                                      # (higher = more resistant)
 
-    # ── Treg (Regulatory T cell) ───────────────────────────────────
-    "treg_migration_speed":  5.0,    # um/hr
-    "treg_lifespan":         144.0,  # hr = 6 days
-    "treg_suppress_radius":  2,      # voxels
-    "treg_suppress_factor":  0.4,    # T cell killing suppressed to 40%
-    "treg_il10_secretion":   0.15,   # pg/mL/hr
-    "treg_tgf_secretion":    0.1,    # pg/mL/hr
+    # ── Stupp protocol schedule ────────────────────────────────────
+    # Phase 1: Concurrent RT + TMZ (days 1-42) — modelled here
+    # Phase 2: Rest (days 43-70) — optional extension
+    # Phase 3: Adjuvant TMZ (days 71-210, 6 cycles) — future work
+    "concurrent_start_day": 1,
+    "concurrent_end_day":   42,
+
+    # Treatment ON/OFF switch — set False to run control (no treatment)
+    "treatment_active":     True,
 }
 
 SIM = {
     "dt":              0.05,
-    "total_time":      720.0,   # hr = 30 days
+    "total_time":      TREATMENT["total_time_hr"],
     "n_initial_cells": 50,
+    "n_initial_gsc":   5,            # explicitly seeded GSCs at start
     "seed":            42,
     "save_every":      24,
 }
