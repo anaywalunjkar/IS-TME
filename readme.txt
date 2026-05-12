@@ -1,12 +1,12 @@
-# GBM Tumor Microenvironment — In Silico Simulation
+# GBM Tumour Microenvironment — In Silico Simulation
 
-A multiscale computational simulation of the Glioblastoma (GBM) tumor microenvironment built in Python, integrating agent-based modelling (ABM) with partial differential equation (PDE) solvers to reproduce the complex biology of high-grade gliomas in silico.
+A multiscale computational simulation of the Glioblastoma (GBM) tumour microenvironment built in Python, integrating agent-based modelling (ABM) with partial differential equation (PDE) solvers to reproduce the complex biology of high-grade gliomas in silico.
 
 ---
 
 ## What this simulates
 
-Glioblastoma Multiforme (GBM, WHO Grade IV) is the most aggressive primary brain tumor in adults. This simulation models the tumor as an evolving ecosystem of interacting cell agents and diffusible molecular fields over a 30-day virtual timeline.
+Glioblastoma Multiforme (GBM, WHO Grade IV) is the most aggressive primary brain tumour in adults. This simulation models the tumour as an evolving ecosystem of interacting cell agents and diffusible molecular fields over a 30-day virtual timeline.
 
 ### Biological components modelled
 
@@ -29,7 +29,7 @@ Glioblastoma Multiforme (GBM, WHO Grade IV) is the most aggressive primary brain
 ## Architecture
 
 The simulation uses a **hybrid PDE-ABM approach** inspired by Frieboes et al. 2007:
-- **PDE layer**: finite-difference diffusion solvers for 6 substrate/signaling fields
+- **PDE layer**: finite-difference diffusion solvers for 6 substrate/signalling fields
 - **Agent layer**: discrete cell objects with state machines, division, and migration
 - **Coupling**: cells read local field concentrations; cells update field secretion maps each timestep
 
@@ -47,7 +47,7 @@ gbm_tme/
 ├── visualization/plotter.py  # Matplotlib output figures
 ├── tests/
 │   ├── test_diffusion.py     # PDE solver unit tests
-│   ├── test_cells.py         # Tumor cell transition tests
+│   ├── test_cells.py         # Tumour cell transition tests
 │   └── test_immune.py        # Immune cell behaviour tests
 └── run_sim.py                # Entry point
 ```
@@ -72,10 +72,10 @@ gbm_tme/
 
 The simulation produces 6 figures per run:
 
-- `output_spatial.png` — O₂ field, tumor cell states, glucose field at day 30
+- `output_spatial.png` — O₂ field, tumour cell states, glucose field at day 30
 - `output_immune.png` — TAM M1/M2 positions, T cell states, TGF-β vs IFN-γ overlay
 - `output_signaling.png` — VEGF, TGF-β, IL-10, IFN-γ spatial fields at day 30
-- `output_growth.png` — Tumor growth curve and cell state dynamics over 30 days
+- `output_growth.png` — Tumour growth curve and cell state dynamics over 30 days
 - `output_immune_timeseries.png` — TAM polarisation, T cell exhaustion, cytokine balance
 - `output_signaling_timeseries.png` — VEGF + angiogenesis, TGF-β, IL-10 over time
 
@@ -98,12 +98,12 @@ All biological constants are in `config/params.py`. Every value has a literature
 
 ## Roadmap
 
-- [x] Step 1: Core tumor model — cell states, O₂/glucose PDE, necrotic core
-- [x] Step 2: Signaling layer — VEGF, TGF-β, IL-10, angiogenesis
+- [x] Step 1: Core tumour model — cell states, O₂/glucose PDE, necrotic core
+- [x] Step 2: Signalling layer — VEGF, TGF-β, IL-10, angiogenesis
 - [x] Step 3: Immune compartment — TAMs, T cells, MDSCs, Tregs, IFN-γ
 - [Ongoing] Step 4: Treatment module — TMZ PK/PD, radiation, MGMT methylation
 - [Ongoing] Step 5: Patient module- sc/Bulk seq data integration
-- [ ] Step 6: Patient-specific treatment extensions via
+- [ ] Step 6: Patient-specific treatment extensions
 
 ---
 
@@ -113,7 +113,7 @@ Key papers this simulation is grounded in:
 
 1. Neftel et al. (2019) — GBM cell state map. *Cell* 178(4)
 2. Frieboes et al. (2007) — Hybrid PDE-ABM GBM model. *NeuroImage* 37:S59
-3. Quail & Joyce (2017) — GBM tumor microenvironment. *Cancer Cell* 31(3)
+3. Quail & Joyce (2017) — GBM tumour microenvironment. *Cancer Cell* 31(3)
 4. Hambardzumyan et al. (2016) — TAM biology in GBM. *Nature Neuroscience* 19(2)
 5. Semenza (2001) — HIF-1α and hypoxia signalling. *Cell* 107(1)
 6. Ferrara et al. (2003) — VEGF biology. *Nature Medicine* 9(6)
